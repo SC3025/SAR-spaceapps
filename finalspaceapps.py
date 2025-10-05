@@ -1,7 +1,7 @@
 """
 INTEGRATED SAR EARTH OBSERVATORY PLATFORM
 ==========================================
-NASA Space Apps Challenge 2024: Through the Radar Looking Glass
+NASA Space Apps Challenge 2025: Through the Radar Looking Glass
 
 Installation:
 pip install streamlit numpy pandas plotly requests
