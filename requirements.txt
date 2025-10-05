@@ -1,0 +1,8 @@
+streamlit
+numpy 
+pandas 
+plotly
+datetime 
+requests
+urllib3
+skyfield
