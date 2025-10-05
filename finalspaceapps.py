@@ -323,7 +323,7 @@ def get_satellite_position(satellite_tle, when=None):
 # ============================================================================
 
 st.set_page_config(
-    page_title="SAR Earth Observatory | NASA Space Apps 2024",
+    page_title="SAR Earth Observatory | NASA Space Apps 2025",
     page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -384,7 +384,7 @@ st.markdown("""
 
 # Header
 st.markdown('<h1 class="main-header">🛰️ Through the Radar Looking Glass</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2024</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2025</p>', unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
