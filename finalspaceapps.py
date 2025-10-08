@@ -1281,12 +1281,7 @@ with tab6:
     
     if not GEE_AVAILABLE:
         st.error("⚠️ Google Earth Engine not available. Install with: `pip install earthengine-api geemap`")
-        st.info("""
-        **To use this feature:**
-        1. Install: `pip install earthengine-api geemap folium streamlit-folium`
-        2. Set up GEE service account
-        3. Add credentials to Streamlit secrets
-        """)
+        
     else:
         # Initialize GEE
         gee_initialized = initialize_gee()
