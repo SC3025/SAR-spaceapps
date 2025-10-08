@@ -466,7 +466,7 @@ st.markdown("""
 
 # Header
 st.markdown('<h1 class="main-header">🛰️ Through the Radar Looking Glass</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2024</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2025</p>', unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
