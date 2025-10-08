@@ -6,3 +6,7 @@ datetime
 requests
 urllib3
 skyfield
+earthengine-api
+geemap
+folium
+streamlit-folium
