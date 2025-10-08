@@ -1,7 +1,7 @@
 """
 INTEGRATED SAR EARTH OBSERVATORY PLATFORM
 ==========================================
-NASA Space Apps Challenge 2025: Through the Radar Looking Glass
+NASA Space Apps Challenge 2024: Through the Radar Looking Glass
 
 Installation:
 pip install streamlit numpy pandas plotly requests
@@ -15,9 +15,6 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import requests
 import urllib3
-import skyfield
-
-
 
 # Disable SSL warnings (for development/hackathon only)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -30,8 +27,93 @@ except ImportError:
     SKYFIELD_AVAILABLE = False
 
 # ============================================================================
-# DATA FETCHING FUNCTIONS
+# GOOGLE EARTH ENGINE FUNCTIONS
 # ============================================================================
+
+def initialize_gee():
+    """Initialize Google Earth Engine with service account"""
+    if not GEE_AVAILABLE:
+        return False
+    
+    try:
+        # Try to get credentials from Streamlit secrets
+        if hasattr(st, 'secrets') and 'gee' in st.secrets:
+            credentials = ee.ServiceAccountCredentials(
+                st.secrets['gee']['service_account'],
+                key_data=st.secrets['gee']['private_key']
+            )
+            ee.Initialize(credentials)
+            return True
+        else:
+            # Try default authentication (for local development)
+            ee.Initialize()
+            return True
+    except Exception as e:
+        st.error(f"GEE Authentication failed: {str(e)}")
+        return False
+
+
+def get_sentinel1_image(lon, lat, start_date, end_date, buffer_km=50):
+    """Fetch Sentinel-1 SAR imagery for a location"""
+    if not GEE_AVAILABLE:
+        return None
+    
+    try:
+        # Define area of interest
+        point = ee.Geometry.Point([lon, lat])
+        aoi = point.buffer(buffer_km * 1000)  # Convert km to meters
+        
+        # Get Sentinel-1 SAR collection
+        collection = ee.ImageCollection('COPERNICUS/S1_GRD') \
+            .filterBounds(aoi) \
+            .filterDate(start_date, end_date) \
+            .filter(ee.Filter.eq('instrumentMode', 'IW')) \
+            .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+        
+        # Get the most recent image
+        image = collection.sort('system:time_start', False).first()
+        
+        if image.getInfo() is None:
+            return None
+        
+        # Select VV and VH polarizations
+        sar_image = image.select(['VV', 'VH'])
+        
+        return {
+            'image': sar_image,
+            'aoi': aoi,
+            'date': ee.Date(image.get('system:time_start')).format('YYYY-MM-dd').getInfo(),
+            'satellite': image.get('platform_number').getInfo()
+        }
+    except Exception as e:
+        st.error(f"Error fetching SAR image: {str(e)}")
+        return None
+
+
+def geocode_location(location_name):
+    """Geocode location name to coordinates using Nominatim"""
+    try:
+        url = f"https://nominatim.openstreetmap.org/search"
+        params = {
+            'q': location_name,
+            'format': 'json',
+            'limit': 1
+        }
+        headers = {'User-Agent': 'SAR-Observatory-App'}
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200 and response.json():
+            result = response.json()[0]
+            return {
+                'lat': float(result['lat']),
+                'lon': float(result['lon']),
+                'display_name': result['display_name']
+            }
+    except Exception as e:
+        st.error(f"Geocoding error: {str(e)}")
+    
+    return None
 
 @st.cache_data(ttl=1800)
 def fetch_nasa_eonet_disasters():
@@ -323,7 +405,7 @@ def get_satellite_position(satellite_tle, when=None):
 # ============================================================================
 
 st.set_page_config(
-    page_title="SAR Earth Observatory | NASA Space Apps 2025",
+    page_title="SAR Earth Observatory | NASA Space Apps 2024",
     page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -384,7 +466,7 @@ st.markdown("""
 
 # Header
 st.markdown('<h1 class="main-header">🛰️ Through the Radar Looking Glass</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2025</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2024</p>', unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
@@ -421,12 +503,13 @@ with st.sidebar:
     st.markdown("[📡 UNAVCO](https://www.unavco.org)")
 
 # Main tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🚨 Disaster Monitoring", 
     "🏗️ Ground Deformation", 
     "💓 Earth's Heartbeat",
     "📊 Integrated Dashboard",
-    "🛰️ Mission Planner"
+    "🛰️ Mission Planner",
+    "🗺️ SAR Image Viewer"
 ])
 
 # ==================== TAB 1: DISASTER MONITORING ====================
@@ -1189,6 +1272,420 @@ with tab5:
                    f'<p style="margin: 0.5rem 0 0 0;">Data Quality</p></div>', 
                    unsafe_allow_html=True)
 
+# ==================== TAB 5: MISSION PLANNER ====================
+with tab5:
+    st.markdown("## 🛰️ SAR Mission Planner")
+    st.markdown("Plan SAR satellite acquisitions over your area of interest")
+    
+    if not SKYFIELD_AVAILABLE:
+        st.error("⚠️ Skyfield library not installed. Install with: `pip install skyfield`")
+        st.info("This tab requires the skyfield library for orbital calculations.")
+    else:
+        st.success("✅ Satellite tracking enabled")
+        
+        col_map, col_controls = st.columns([2, 1])
+        
+        with col_controls:
+            st.markdown("### 📍 Area of Interest")
+            
+            preset_locations = {
+                "Custom Location": (0, 0),
+                "New York, USA": (40.7128, -74.0060),
+                "Tokyo, Japan": (35.6762, 139.6503),
+                "Dubai, UAE": (25.2048, 55.2708),
+                "São Paulo, Brazil": (-23.5505, -46.6333),
+                "London, UK": (51.5074, -0.1278),
+                "Mumbai, India": (19.0760, 72.8777),
+                "Sydney, Australia": (-33.8688, 151.2093)
+            }
+            
+            location_choice = st.selectbox("Select location", list(preset_locations.keys()))
+            
+            if location_choice == "Custom Location":
+                target_lat = st.number_input("Latitude", -90.0, 90.0, 0.0, 0.1)
+                target_lon = st.number_input("Longitude", -180.0, 180.0, 0.0, 0.1)
+            else:
+                target_lat, target_lon = preset_locations[location_choice]
+                st.info(f"📍 {location_choice}\n\nLat: {target_lat:.4f}°\nLon: {target_lon:.4f}°")
+            
+            st.markdown("---")
+            st.markdown("### ⏰ Time Window")
+            hours_ahead = st.slider("Hours ahead to search", 12, 72, 48, 6)
+            
+            st.markdown("---")
+            st.markdown("### 🛰️ SAR Satellites")
+            st.markdown("""
+            - **Sentinel-1A** (ESA) - C-band
+            - **Sentinel-1B** (ESA) - C-band  
+            - **ALOS-2** (JAXA) - L-band
+            - **RADARSAT-2** (CSA) - C-band
+            """)
+        
+        with col_map:
+            st.markdown("### 🗺️ Satellite Coverage Map")
+            
+            with st.spinner("Fetching satellite orbital data..."):
+                tle_data = fetch_satellite_tle()
+            
+            if tle_data:
+                st.success(f"✅ Loaded {len(tle_data)} SAR satellites")
+                
+                fig_mission = go.Figure()
+                
+                fig_mission.add_trace(go.Scattergeo(
+                    lon=[target_lon], lat=[target_lat],
+                    mode='markers+text',
+                    marker=dict(size=15, color='red', symbol='star'),
+                    text=['Target'], textposition='top center',
+                    name='Area of Interest'
+                ))
+                
+                satellite_colors = {
+                    'Sentinel-1A': '#3498db', 'Sentinel-1B': '#2ecc71',
+                    'ALOS-2': '#f39c12', 'RADARSAT-2': '#9b59b6'
+                }
+                
+                sat_positions = []
+                for sat_name, tle in tle_data.items():
+                    pos = get_satellite_position(tle)
+                    if pos:
+                        sat_positions.append({
+                            'name': sat_name, 'lat': pos['lat'],
+                            'lon': pos['lon'], 'alt': pos['altitude_km']
+                        })
+                        
+                        fig_mission.add_trace(go.Scattergeo(
+                            lon=[pos['lon']], lat=[pos['lat']],
+                            mode='markers+text',
+                            marker=dict(size=12, color=satellite_colors.get(sat_name, '#95a5a6'), 
+                                       symbol='diamond'),
+                            text=[sat_name], textposition='bottom center',
+                            name=sat_name,
+                            hovertemplate=f'<b>{sat_name}</b><br>Altitude: {pos["altitude_km"]:.0f} km<extra></extra>'
+                        ))
+                
+                fig_mission.update_layout(
+                    geo=dict(projection_type='natural earth', showland=True,
+                            landcolor='rgb(243, 243, 243)', coastlinecolor='rgb(204, 204, 204)',
+                            showocean=True, oceancolor='rgb(230, 245, 255)',
+                            center=dict(lat=target_lat, lon=target_lon), projection_scale=1),
+                    height=500, margin=dict(l=0, r=0, t=30, b=0), showlegend=True
+                )
+                
+                st.plotly_chart(fig_mission, use_container_width=True)
+                
+                st.markdown("---")
+                st.markdown("### 📅 Predicted Satellite Passes")
+                
+                with st.spinner("Calculating satellite passes..."):
+                    pass_predictions = {}
+                    for sat_name, tle in tle_data.items():
+                        passes = calculate_next_pass(tle, target_lat, target_lon, hours_ahead)
+                        if passes:
+                            pass_predictions[sat_name] = passes
+                
+                if pass_predictions:
+                    for sat_name, passes in pass_predictions.items():
+                        with st.expander(f"🛰️ {sat_name} - {len(passes)} passes predicted"):
+                            st.markdown(f"**Next {len(passes)} passes over target area:**")
+                            
+                            for i, pass_time in enumerate(passes, 1):
+                                # Make both datetimes timezone-aware for comparison
+                                if pass_time.tzinfo is None:
+                                    pass_time_aware = pass_time.replace(tzinfo=None)
+                                    now_time = datetime.utcnow()
+                                else:
+                                    pass_time_aware = pass_time.replace(tzinfo=None)
+                                    now_time = datetime.utcnow()
+                                
+                                time_until = pass_time_aware - now_time
+                                hours = time_until.total_seconds() / 3600
+                                
+                                st.markdown(f"""
+                                **Pass #{i}**
+                                - Time: {pass_time_aware.strftime('%Y-%m-%d %H:%M:%S')} UTC
+                                - In: {hours:.1f} hours
+                                """)
+                else:
+                    st.warning("No passes predicted. Try increasing the time range.")
+                
+                st.markdown("---")
+                st.markdown("### 📊 Current Satellite Status")
+                
+                if sat_positions:
+                    status_df = pd.DataFrame(sat_positions)
+                    status_df['altitude_km'] = status_df['alt'].round(0)
+                    status_df = status_df[['name', 'lat', 'lon', 'altitude_km']]
+                    status_df.columns = ['Satellite', 'Latitude', 'Longitude', 'Altitude (km)']
+                    st.dataframe(status_df, use_container_width=True, hide_index=True)
+                    st.caption("Data updated in real-time from orbital elements")
+                
+            else:
+                st.error("❌ Could not fetch satellite TLE data")
+                st.info("Using simulated mission planning...")
+                
+                st.markdown("### 📅 Simulated Satellite Passes")
+                simulated_passes = {
+                    'Sentinel-1A': ['2024-10-06 14:23 UTC', '2024-10-07 02:15 UTC'],
+                    'ALOS-2': ['2024-10-06 09:45 UTC', '2024-10-08 21:30 UTC'],
+                    'RADARSAT-2': ['2024-10-06 18:12 UTC', '2024-10-07 06:45 UTC']
+                }
+                
+                for sat_name, passes in simulated_passes.items():
+                    with st.expander(f"🛰️ {sat_name} (Simulated)"):
+                        for i, pass_time in enumerate(passes, 1):
+                            st.markdown(f"**Pass #{i}:** {pass_time}")
+
+# ==================== TAB 6: SAR IMAGE VIEWER ====================
+with tab6:
+    st.markdown("## 🗺️ SAR Image Viewer")
+    st.markdown("View actual Sentinel-1 SAR imagery from Google Earth Engine")
+    
+    if not GEE_AVAILABLE:
+        st.error("⚠️ Google Earth Engine not available. Install with: `pip install earthengine-api geemap`")
+        st.info("""
+        **To use this feature:**
+        1. Install: `pip install earthengine-api geemap folium streamlit-folium`
+        2. Set up GEE service account
+        3. Add credentials to Streamlit secrets
+        """)
+    else:
+        # Initialize GEE
+        gee_initialized = initialize_gee()
+        
+        if gee_initialized:
+            st.success("✅ Google Earth Engine connected")
+            
+            col_search, col_date = st.columns([2, 1])
+            
+            with col_search:
+                st.markdown("### 🔍 Search Location")
+                
+                # Preset locations
+                preset_sar_locations = {
+                    "Custom Search": None,
+                    "Tokyo, Japan": (35.6762, 139.6503),
+                    "Los Angeles, USA": (34.0522, -118.2437),
+                    "Amazon Rainforest, Brazil": (-3.4653, -62.2159),
+                    "Greenland Ice Sheet": (72.0, -40.0),
+                    "Dubai, UAE": (25.2048, 55.2708),
+                    "Venice, Italy": (45.4408, 12.3155),
+                    "Mount Everest": (27.9881, 86.9250)
+                }
+                
+                location_preset = st.selectbox(
+                    "Choose preset or search custom",
+                    list(preset_sar_locations.keys()),
+                    key="sar_location_preset"
+                )
+                
+                if location_preset == "Custom Search":
+                    search_query = st.text_input(
+                        "Enter location name",
+                        placeholder="e.g., Paris, France",
+                        key="sar_search_query"
+                    )
+                    
+                    if search_query and st.button("🔍 Search", key="search_button"):
+                        with st.spinner("Geocoding location..."):
+                            geocode_result = geocode_location(search_query)
+                            if geocode_result:
+                                st.session_state['sar_lat'] = geocode_result['lat']
+                                st.session_state['sar_lon'] = geocode_result['lon']
+                                st.success(f"Found: {geocode_result['display_name']}")
+                            else:
+                                st.error("Location not found. Try a different search term.")
+                else:
+                    coords = preset_sar_locations[location_preset]
+                    if coords:
+                        st.session_state['sar_lat'] = coords[0]
+                        st.session_state['sar_lon'] = coords[1]
+                        st.info(f"📍 {location_preset}\nLat: {coords[0]:.4f}°, Lon: {coords[1]:.4f}°")
+            
+            with col_date:
+                st.markdown("### 📅 Date Range")
+                
+                end_date = st.date_input(
+                    "End Date",
+                    value=datetime.now(),
+                    max_value=datetime.now(),
+                    key="sar_end_date"
+                )
+                
+                start_date = st.date_input(
+                    "Start Date",
+                    value=end_date - timedelta(days=30),
+                    max_value=end_date,
+                    key="sar_start_date"
+                )
+                
+                buffer_km = st.slider(
+                    "Area radius (km)",
+                    min_value=10,
+                    max_value=100,
+                    value=50,
+                    step=10,
+                    key="sar_buffer"
+                )
+            
+            st.markdown("---")
+            
+            # Load SAR imagery button
+            if 'sar_lat' in st.session_state and 'sar_lon' in st.session_state:
+                if st.button("🛰️ Load SAR Imagery", type="primary", key="load_sar"):
+                    with st.spinner("Fetching Sentinel-1 SAR data from Google Earth Engine..."):
+                        sar_data = get_sentinel1_image(
+                            st.session_state['sar_lon'],
+                            st.session_state['sar_lat'],
+                            start_date.strftime('%Y-%m-%d'),
+                            end_date.strftime('%Y-%m-%d'),
+                            buffer_km
+                        )
+                        
+                        if sar_data:
+                            st.session_state['sar_data'] = sar_data
+                            st.success(f"✅ SAR image loaded! Acquired: {sar_data['date']} by Sentinel-{sar_data['satellite']}")
+                        else:
+                            st.warning("No SAR imagery found for this location and date range. Try expanding the date range or choosing a different location.")
+            
+            # Display SAR imagery
+            if 'sar_data' in st.session_state:
+                st.markdown("### 🛰️ Sentinel-1 SAR Image")
+                
+                try:
+                    # Create map using geemap
+                    Map = geemap.Map(
+                        center=[st.session_state['sar_lat'], st.session_state['sar_lon']],
+                        zoom=10
+                    )
+                    
+                    # Add SAR image with visualization parameters
+                    vis_params = {
+                        'min': -25,
+                        'max': 0,
+                        'bands': ['VV']
+                    }
+                    
+                    Map.addLayer(
+                        st.session_state['sar_data']['image'],
+                        vis_params,
+                        'Sentinel-1 SAR (VV)'
+                    )
+                    
+                    # Add location marker
+                    Map.add_marker(
+                        location=[st.session_state['sar_lat'], st.session_state['sar_lon']],
+                        popup="Target Location",
+                        icon="red"
+                    )
+                    
+                    # Display map
+                    Map.to_streamlit(height=600)
+                    
+                except Exception as e:
+                    st.error(f"Error displaying map: {str(e)}")
+                    st.info("Showing alternative visualization...")
+                    
+                    # Fallback: Show basic info
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    
+                    with col_info1:
+                        st.metric("Acquisition Date", st.session_state['sar_data']['date'])
+                    
+                    with col_info2:
+                        st.metric("Satellite", f"Sentinel-{st.session_state['sar_data']['satellite']}")
+                    
+                    with col_info3:
+                        st.metric("Polarization", "VV, VH")
+                
+                st.markdown("---")
+                
+                # SAR image information
+                st.markdown("### ℹ️ SAR Image Information")
+                
+                col_tech1, col_tech2 = st.columns(2)
+                
+                with col_tech1:
+                    st.markdown("""
+                    **Sentinel-1 Specifications:**
+                    - **Band:** C-band (5.405 GHz)
+                    - **Wavelength:** ~5.6 cm
+                    - **Polarization:** VV, VH
+                    - **Resolution:** 10m (IW mode)
+                    - **Swath Width:** 250 km
+                    """)
+                
+                with col_tech2:
+                    st.markdown("""
+                    **Visualization:**
+                    - **VV (Vertical-Vertical):** Primary polarization
+                    - **Dark areas:** Water, smooth surfaces
+                    - **Bright areas:** Urban, rough surfaces
+                    - **Values:** Backscatter in dB (-25 to 0)
+                    """)
+                
+                # Download information
+                st.markdown("### 📥 Export Options")
+                st.info("""
+                **To export this SAR image:**
+                1. The image is loaded from Google Earth Engine
+                2. Use GEE's export functions to download as GeoTIFF
+                3. Or use the geemap export tools
+                """)
+            
+            else:
+                st.info("👆 Select a location and date range, then click 'Load SAR Imagery' to view Sentinel-1 data")
+                
+                # Show example SAR imagery characteristics
+                st.markdown("### 📚 About SAR Imagery")
+                
+                col_ex1, col_ex2, col_ex3 = st.columns(3)
+                
+                with col_ex1:
+                    st.markdown("""
+                    **🌊 Water Detection**
+                    - Appears very dark
+                    - Low backscatter
+                    - Useful for flood mapping
+                    """)
+                
+                with col_ex2:
+                    st.markdown("""
+                    **🏙️ Urban Areas**
+                    - Appears very bright
+                    - High backscatter
+                    - Double-bounce effect
+                    """)
+                
+                with col_ex3:
+                    st.markdown("""
+                    **🌳 Vegetation**
+                    - Medium brightness
+                    - Volume scattering
+                    - Varies with canopy
+                    """)
+        
+        else:
+            st.error("❌ Failed to initialize Google Earth Engine")
+            st.info("""
+            **Setup Instructions:**
+            
+            1. **Create GEE Service Account:**
+               - Go to https://console.cloud.google.com
+               - Create project and enable Earth Engine API
+               - Create service account and download JSON key
+            
+            2. **Add to Streamlit Secrets:**
+               ```toml
+               [gee]
+               service_account = "your-account@project.iam.gserviceaccount.com"
+               private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+               ```
+            
+            3. **Register service account with Earth Engine:**
+               - Go to https://code.earthengine.google.com
+               - Register your service account email
+            """)
 
 # Footer
 st.markdown("---")
