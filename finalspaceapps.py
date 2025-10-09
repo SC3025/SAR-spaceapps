@@ -15,6 +15,8 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import requests
 import urllib3
+from dateutil import parser  # make sure you have python-dateutil installed
+
 
 # Disable SSL warnings (for development/hackathon only)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1085,11 +1087,15 @@ with tab5:
                     for sat_name, passes in pass_predictions.items():
                         with st.expander(f"🛰️ {sat_name} - {len(passes)} passes predicted"):
                             st.markdown(f"**Next {len(passes)} passes over target area:**")
-                            
+                
                             for i, pass_time in enumerate(passes, 1):
+                                # Ensure pass_time is a datetime object
+                                if isinstance(pass_time, str):
+                                    pass_time = parser.parse(pass_time)
+                                
                                 time_until = pass_time - datetime.utcnow()
                                 hours = time_until.total_seconds() / 3600
-                                
+                
                                 st.markdown(f"""
                                 **Pass #{i}**
                                 - Time: {pass_time.strftime('%Y-%m-%d %H:%M:%S')} UTC
