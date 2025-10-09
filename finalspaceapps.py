@@ -466,7 +466,7 @@ st.markdown("""
 
 # Header
 st.markdown('<h1 class="main-header">🛰️ Through the Radar Looking Glass</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2025</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Revealing Earth Processes with Synthetic Aperture Radar | NASA Space Apps 2025-Team Trisolaris</p>', unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
@@ -1562,4 +1562,4 @@ with st.sidebar:
     - ✅ No API keys required
     """)
     st.markdown("---")
-    st.markdown("**Made for NASA Space Apps 2025**")
+    st.markdown("**Made for NASA Space Apps 2025 - Team Trisolris @SSSIHL **")
