@@ -1272,16 +1272,190 @@ with tab5:
                    f'<p style="margin: 0.5rem 0 0 0;">Data Quality</p></div>', 
                    unsafe_allow_html=True)
 
-
+# ==================== TAB 5: MISSION PLANNER ====================
+with tab5:
+    st.markdown("## 🛰️ SAR Mission Planner")
+    st.markdown("Plan SAR satellite acquisitions over your area of interest")
+    
+    if not SKYFIELD_AVAILABLE:
+        st.error("⚠️ Skyfield library not installed. Install with: `pip install skyfield`")
+        st.info("This tab requires the skyfield library for orbital calculations.")
+    else:
+        st.success("✅ Satellite tracking enabled")
+        
+        col_map, col_controls = st.columns([2, 1])
+        
+        with col_controls:
+            st.markdown("### 📍 Area of Interest")
+            
+            preset_locations = {
+                "Custom Location": (0, 0),
+                "New York, USA": (40.7128, -74.0060),
+                "Tokyo, Japan": (35.6762, 139.6503),
+                "Dubai, UAE": (25.2048, 55.2708),
+                "São Paulo, Brazil": (-23.5505, -46.6333),
+                "London, UK": (51.5074, -0.1278),
+                "Mumbai, India": (19.0760, 72.8777),
+                "Sydney, Australia": (-33.8688, 151.2093)
+            }
+            
+            location_choice = st.selectbox("Select location", list(preset_locations.keys()))
+            
+            if location_choice == "Custom Location":
+                target_lat = st.number_input("Latitude", -90.0, 90.0, 0.0, 0.1)
+                target_lon = st.number_input("Longitude", -180.0, 180.0, 0.0, 0.1)
+            else:
+                target_lat, target_lon = preset_locations[location_choice]
+                st.info(f"📍 {location_choice}\n\nLat: {target_lat:.4f}°\nLon: {target_lon:.4f}°")
+            
+            st.markdown("---")
+            st.markdown("### ⏰ Time Window")
+            hours_ahead = st.slider("Hours ahead to search", 12, 72, 48, 6)
+            
+            st.markdown("---")
+            st.markdown("### 🛰️ SAR Satellites")
+            st.markdown("""
+            - **Sentinel-1A** (ESA) - C-band
+            - **Sentinel-1B** (ESA) - C-band  
+            - **ALOS-2** (JAXA) - L-band
+            - **RADARSAT-2** (CSA) - C-band
+            """)
+        
+        with col_map:
+            st.markdown("### 🗺️ Satellite Coverage Map")
+            
+            with st.spinner("Fetching satellite orbital data..."):
+                tle_data = fetch_satellite_tle()
+            
+            if tle_data:
+                st.success(f"✅ Loaded {len(tle_data)} SAR satellites")
+                
+                fig_mission = go.Figure()
+                
+                fig_mission.add_trace(go.Scattergeo(
+                    lon=[target_lon], lat=[target_lat],
+                    mode='markers+text',
+                    marker=dict(size=15, color='red', symbol='star'),
+                    text=['Target'], textposition='top center',
+                    name='Area of Interest'
+                ))
+                
+                satellite_colors = {
+                    'Sentinel-1A': '#3498db', 'Sentinel-1B': '#2ecc71',
+                    'ALOS-2': '#f39c12', 'RADARSAT-2': '#9b59b6'
+                }
+                
+                sat_positions = []
+                for sat_name, tle in tle_data.items():
+                    pos = get_satellite_position(tle)
+                    if pos:
+                        sat_positions.append({
+                            'name': sat_name, 'lat': pos['lat'],
+                            'lon': pos['lon'], 'alt': pos['altitude_km']
+                        })
+                        
+                        fig_mission.add_trace(go.Scattergeo(
+                            lon=[pos['lon']], lat=[pos['lat']],
+                            mode='markers+text',
+                            marker=dict(size=12, color=satellite_colors.get(sat_name, '#95a5a6'), 
+                                       symbol='diamond'),
+                            text=[sat_name], textposition='bottom center',
+                            name=sat_name,
+                            hovertemplate=f'<b>{sat_name}</b><br>Altitude: {pos["altitude_km"]:.0f} km<extra></extra>'
+                        ))
+                
+                fig_mission.update_layout(
+                    geo=dict(projection_type='natural earth', showland=True,
+                            landcolor='rgb(243, 243, 243)', coastlinecolor='rgb(204, 204, 204)',
+                            showocean=True, oceancolor='rgb(230, 245, 255)',
+                            center=dict(lat=target_lat, lon=target_lon), projection_scale=1),
+                    height=500, margin=dict(l=0, r=0, t=30, b=0), showlegend=True
+                )
+                
+                st.plotly_chart(fig_mission, use_container_width=True)
+                
+                st.markdown("---")
+                st.markdown("### 📅 Predicted Satellite Passes")
+                
+                with st.spinner("Calculating satellite passes..."):
+                    pass_predictions = {}
+                    for sat_name, tle in tle_data.items():
+                        passes = calculate_next_pass(tle, target_lat, target_lon, hours_ahead)
+                        if passes:
+                            pass_predictions[sat_name] = passes
+                
+                if pass_predictions:
+                    for sat_name, passes in pass_predictions.items():
+                        with st.expander(f"🛰️ {sat_name} - {len(passes)} passes predicted"):
+                            st.markdown(f"**Next {len(passes)} passes over target area:**")
+                            
+                            for i, pass_time in enumerate(passes, 1):
+                                # Make both datetimes timezone-aware for comparison
+                                if pass_time.tzinfo is None:
+                                    pass_time_aware = pass_time.replace(tzinfo=None)
+                                    now_time = datetime.utcnow()
+                                else:
+                                    pass_time_aware = pass_time.replace(tzinfo=None)
+                                    now_time = datetime.utcnow()
+                                
+                                time_until = pass_time_aware - now_time
+                                hours = time_until.total_seconds() / 3600
+                                
+                                st.markdown(f"""
+                                **Pass #{i}**
+                                - Time: {pass_time_aware.strftime('%Y-%m-%d %H:%M:%S')} UTC
+                                - In: {hours:.1f} hours
+                                """)
+                else:
+                    st.warning("No passes predicted. Try increasing the time range.")
+                
+                st.markdown("---")
+                st.markdown("### 📊 Current Satellite Status")
+                
+                if sat_positions:
+                    status_df = pd.DataFrame(sat_positions)
+                    status_df['altitude_km'] = status_df['alt'].round(0)
+                    status_df = status_df[['name', 'lat', 'lon', 'altitude_km']]
+                    status_df.columns = ['Satellite', 'Latitude', 'Longitude', 'Altitude (km)']
+                    st.dataframe(status_df, use_container_width=True, hide_index=True)
+                    st.caption("Data updated in real-time from orbital elements")
+                
+            else:
+                st.error("❌ Could not fetch satellite TLE data")
+                st.info("Using simulated mission planning...")
+                
+                st.markdown("### 📅 Simulated Satellite Passes")
+                simulated_passes = {
+                    'Sentinel-1A': ['2024-10-06 14:23 UTC', '2024-10-07 02:15 UTC'],
+                    'ALOS-2': ['2024-10-06 09:45 UTC', '2024-10-08 21:30 UTC'],
+                    'RADARSAT-2': ['2024-10-06 18:12 UTC', '2024-10-07 06:45 UTC']
+                }
+                
+                for sat_name, passes in simulated_passes.items():
+                    with st.expander(f"🛰️ {sat_name} (Simulated)"):
+                        for i, pass_time in enumerate(passes, 1):
+                            st.markdown(f"**Pass #{i}:** {pass_time}")
 
 # ==================== TAB 6: SAR IMAGE VIEWER ====================
 with tab6:
     st.markdown("## 🗺️ SAR Image Viewer")
     st.markdown("View actual Sentinel-1 SAR imagery from Google Earth Engine")
     
-    if not GEE_AVAILABLE:
+    # Check if GEE is available
+    try:
+        gee_check = GEE_AVAILABLE
+    except NameError:
+        gee_check = False
+        GEE_AVAILABLE = False
+    
+    if not gee_check:
         st.error("⚠️ Google Earth Engine not available. Install with: `pip install earthengine-api geemap`")
-        
+        st.info("""
+        **To use this feature:**
+        1. Install: `pip install earthengine-api geemap folium streamlit-folium`
+        2. Set up GEE service account
+        3. Add credentials to Streamlit secrets
+        """)
     else:
         # Initialize GEE
         gee_initialized = initialize_gee()
@@ -1550,4 +1724,4 @@ with st.sidebar:
     - ✅ No API keys required
     """)
     st.markdown("---")
-    st.markdown("**Made for NASA Space Apps 2024**")
+    st.markdown("**Made for NASA Space Apps 2025**")
