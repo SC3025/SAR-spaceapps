@@ -10,5 +10,7 @@ earthengine-api
 geemap
 folium
 streamlit-folium
+python-dateutil
+
 
 
