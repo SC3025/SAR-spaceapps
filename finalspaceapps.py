@@ -1543,14 +1543,14 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 2rem 0;'>
     <h4>🛰️ SAR Earth Observatory Platform</h4>
-    <p>NASA Space Apps Challenge 2024 | Through the Radar Looking Glass</p>
+    <p>NASA Space Apps Challenge 2025 | Through the Radar Looking Glass</p>
     <p style='font-size: 0.9rem;'>
         Data Sources: NASA EONET • USGS Earthquakes • CelesTrak TLE Data<br>
         Powered by Sentinel-1, ALOS-2, RADARSAT-2 missions<br>
-        <strong>100% Free • No API Keys Required</strong>
+        <strong>contact bayerncity3025gmail.com </strong>
     </p>
     <p style='font-size: 0.9rem; margin-top: 1rem;'>
-        🌍 Monitoring Earth's pulse, one radar ping at a time
+         Monitoring Earth's pulse, one radar ping at a time
     </p>
 </div>
 """, unsafe_allow_html=True)
