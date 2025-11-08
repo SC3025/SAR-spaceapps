@@ -1547,7 +1547,7 @@ st.markdown("""
     <p style='font-size: 0.9rem;'>
         Data Sources: NASA EONET • USGS Earthquakes • CelesTrak TLE Data<br>
         Powered by Sentinel-1, ALOS-2, RADARSAT-2 missions<br>
-        <strong>contact bayerncity3025gmail.com </strong>
+        <strong> Contact: bayerncity3025gmail.com </strong>
     </p>
     <p style='font-size: 0.9rem; margin-top: 1rem;'>
          Monitoring Earth's pulse, one radar ping at a time
